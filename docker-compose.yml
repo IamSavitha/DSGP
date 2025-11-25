@@ -1,0 +1,484 @@
+services:
+  # ==================== Infrastructure ====================
+  
+  mysql:
+    image: mysql:8.0
+    container_name: kayak_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-kayak_root_pass}
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/database/mysql/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pkayak_root_pass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - kayak_network
+
+  mongodb:
+    image: mongo:6.0
+    container_name: kayak_mongodb
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-kayak_mongo_pass}
+      MONGO_INITDB_DATABASE: kayak_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./backend/database/mongodb/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - kayak_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: kayak_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kayak_network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: kayak_zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - kayak_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kayak_kafka
+    restart: always
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - kayak_network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kayak_kafka_ui
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: kayak_cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - kayak_network
+
+  # ==================== Backend Services ====================
+
+  user-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_user_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: user_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  flight-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_flight_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: flight_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  hotel-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_hotel_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: hotel_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  car-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_car_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: car_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  billing-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_billing_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: billing_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8005:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  admin-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_admin_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: admin_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8006:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  search-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_search_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: search_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8007:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  # ==================== AI Service ====================
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai
+    container_name: kayak_ai_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      MYSQL_HOST: mysql
+      MONGODB_URI: mongodb://admin:kayak_mongo_pass@mongodb:27017
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8008:8000"
+    volumes:
+      - ./ai_service:/app/ai_service
+    networks:
+      - kayak_network
+
+  # ==================== Frontend ====================
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kayak_frontend
+    restart: always
+    depends_on:
+      user-service:
+        condition: service_healthy
+      flight-service:
+        condition: service_healthy
+      hotel-service:
+        condition: service_healthy
+      car-service:
+        condition: service_healthy
+      billing-service:
+        condition: service_healthy
+      admin-service:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      REACT_APP_API_BASE_URL: http://localhost:8001
+    networks:
+      - kayak_network
+
+volumes:
+  mysql_data:
+  mongodb_data:
+  redis_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+
+networks:
+  kayak_network:
+    driver: bridge
+
