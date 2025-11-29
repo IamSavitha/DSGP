@@ -25,11 +25,14 @@ class KafkaProducerService:
         return cls._instance
     
     def __init__(self):
-        if self._producer is None:
-            self._initialize_producer()
-    
+        # Don't initialize producer immediately
+        pass
+
     def _initialize_producer(self):
         """Initialize Kafka producer with configuration."""
+        if self._producer is not None:
+            return
+
         try:
             self._producer = KafkaProducer(
                 bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS.split(','),
@@ -45,7 +48,8 @@ class KafkaProducerService:
             logger.info("Kafka producer initialized successfully")
         except KafkaError as e:
             logger.error(f"Failed to initialize Kafka producer: {e}")
-            raise
+            # Don't raise - allow service to start without Kafka
+            logger.warning("Service will continue without Kafka event publishing")
     
     def send(
         self,
@@ -56,16 +60,25 @@ class KafkaProducerService:
     ) -> bool:
         """
         Send a message to a Kafka topic.
-        
+
         Args:
             topic: The Kafka topic to send to
             value: The message payload (dict)
             key: Optional message key for partitioning
             headers: Optional message headers
-        
+
         Returns:
             True if message was sent successfully
         """
+        # Lazy initialization
+        if self._producer is None:
+            self._initialize_producer()
+
+        # If producer still not initialized, skip sending
+        if self._producer is None:
+            logger.warning(f"Kafka producer not available, skipping message to {topic}")
+            return False
+
         try:
             # Add metadata to message
             message = {
@@ -75,12 +88,12 @@ class KafkaProducerService:
                     "source": "kayak-backend"
                 }
             }
-            
+
             # Convert headers to Kafka format
             kafka_headers = None
             if headers:
                 kafka_headers = [(k, v.encode('utf-8')) for k, v in headers.items()]
-            
+
             # Send message
             future = self._producer.send(
                 topic,
@@ -88,17 +101,17 @@ class KafkaProducerService:
                 key=key,
                 headers=kafka_headers
             )
-            
+
             # Wait for send to complete (with timeout)
             record_metadata = future.get(timeout=10)
-            
+
             logger.debug(
                 f"Message sent to {topic} - "
                 f"partition: {record_metadata.partition}, "
                 f"offset: {record_metadata.offset}"
             )
             return True
-            
+
         except KafkaError as e:
             logger.error(f"Failed to send message to {topic}: {e}")
             return False
@@ -115,13 +128,24 @@ class KafkaProducerService:
     ):
         """
         Send a message asynchronously.
-        
+
         Args:
             topic: The Kafka topic
             value: The message payload
             key: Optional message key
             callback: Optional callback function(record_metadata, exception)
         """
+        # Lazy initialization
+        if self._producer is None:
+            self._initialize_producer()
+
+        # If producer still not initialized, skip sending
+        if self._producer is None:
+            logger.warning(f"Kafka producer not available, skipping async message to {topic}")
+            if callback:
+                callback(None, Exception("Kafka producer not available"))
+            return
+
         try:
             message = {
                 **value,
@@ -130,21 +154,21 @@ class KafkaProducerService:
                     "source": "kayak-backend"
                 }
             }
-            
+
             def on_success(record_metadata):
                 logger.debug(f"Async message sent to {topic}")
                 if callback:
                     callback(record_metadata, None)
-            
+
             def on_error(exception):
                 logger.error(f"Async message failed for {topic}: {exception}")
                 if callback:
                     callback(None, exception)
-            
+
             future = self._producer.send(topic, value=message, key=key)
             future.add_callback(on_success)
             future.add_errback(on_error)
-            
+
         except Exception as e:
             logger.error(f"Failed to send async message: {e}")
             if callback:
