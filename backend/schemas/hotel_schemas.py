@@ -78,6 +78,19 @@ class HotelRoomCreate(BaseModel):
     total_rooms: int = Field(default=1, ge=1)
 
 
+class HotelRoomUpdate(BaseModel):
+    """Schema for updating a hotel room."""
+    price_per_night: Optional[Decimal] = Field(None, gt=0)
+    max_occupancy: Optional[int] = Field(None, ge=1)
+    total_rooms: Optional[int] = Field(None, ge=1)
+    available_rooms: Optional[int] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+
+
+# Alias for backward compatibility
+HotelRoomUpdateData = HotelRoomUpdate
+
+
 class HotelRoomResponse(BaseModel):
     """Schema for hotel room response."""
     room_id: str
@@ -89,7 +102,7 @@ class HotelRoomResponse(BaseModel):
     total_rooms: int
     available_rooms: int
     is_active: bool = True
-    
+
     class Config:
         from_attributes = True
 
@@ -114,6 +127,8 @@ class HotelResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     rooms: Optional[List[HotelRoomResponse]] = None
+    available_rooms: Optional[int] = None  # Available rooms for selected dates
+    total_available_rooms: Optional[int] = None  # Total available rooms
     
     class Config:
         from_attributes = True

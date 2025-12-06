@@ -10,9 +10,11 @@ import logging
 from ...common.config import settings
 from ...common.database import get_mysql_session, init_mysql_db
 from ...common.exceptions import (
-    DuplicateUserException, InvalidUserIdException,
+    DuplicateUserException, InvalidUserIdException, KayakException,
     handle_duplicate_user, handle_not_found, handle_invalid_user_id
 )
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from ...schemas.user_schemas import (
     UserCreate, UserUpdate, UserResponse, UserLogin, TokenResponse
 )
@@ -42,6 +44,35 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(InvalidUserIdException)
+async def invalid_user_id_handler(request, exc: InvalidUserIdException):
+    """Handle InvalidUserIdException from Pydantic validators."""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "detail": {
+                "message": exc.message,
+                "error_code": "INVALID_USER_ID",
+                "details": exc.details
+            }
+        }
+    )
+
+
+@app.exception_handler(KayakException)
+async def kayak_exception_handler(request, exc: KayakException):
+    """Handle general KayakException."""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "detail": {
+                "message": exc.message,
+                "details": exc.details
+            }
+        }
+    )
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup."""
@@ -60,8 +91,13 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "user-service"}
+    """Health check endpoint with database connectivity checks."""
+    from ...common.health import get_comprehensive_health
+    return await get_comprehensive_health(
+        check_mysql=True,
+        check_redis=True,
+        service_name="user-service"
+    )
 
 
 # ==================== User Endpoints ====================
@@ -141,13 +177,16 @@ async def login(
     db: Session = Depends(get_mysql_session)
 ):
     """User login."""
+    logger.info(f"Login attempt for email: {credentials.email}")
     service = UserService(db)
     user = service.authenticate_user(credentials.email, credentials.password)
     if not user:
+        logger.warning(f"Authentication failed for email: {credentials.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
+    logger.info(f"Authentication successful for user: {user.user_id}")
     
     access_token = create_access_token(data={"sub": user.user_id})
     return TokenResponse(

@@ -104,6 +104,10 @@ class MongoCollections:
     USER_LOGS = "user_logs"
     SEARCH_LOGS = "search_logs"
     BOOKING_LOGS = "booking_logs"
+    ADMIN_AUDIT_LOGS = "admin_audit_logs"
+    CHAT_SESSIONS = "chat_sessions"
+    USER_PREFERENCES = "user_preferences"
+    PRICE_HISTORY = "price_history"
 
 
 # ==================== Database Initialization ====================
@@ -137,6 +141,25 @@ async def init_mongodb():
     # Create indexes for analytics
     await db[MongoCollections.ANALYTICS].create_index("metric_type")
     await db[MongoCollections.ANALYTICS].create_index("timestamp")
+    
+    # Create indexes for chat sessions
+    await db[MongoCollections.CHAT_SESSIONS].create_index("session_id", unique=True)
+    await db[MongoCollections.CHAT_SESSIONS].create_index("user_id")
+    await db[MongoCollections.CHAT_SESSIONS].create_index("started_at")
+    await db[MongoCollections.CHAT_SESSIONS].create_index("last_activity")
+    
+    # Create indexes for user preferences
+    await db[MongoCollections.USER_PREFERENCES].create_index("user_id", unique=True)
+    
+    # Create indexes for price history
+    await db[MongoCollections.PRICE_HISTORY].create_index([("listing_id", 1), ("listing_type", 1)])
+    await db[MongoCollections.PRICE_HISTORY].create_index("timestamp", -1)
+    
+    # Create indexes for admin audit logs
+    await db[MongoCollections.ADMIN_AUDIT_LOGS].create_index("admin_id")
+    await db[MongoCollections.ADMIN_AUDIT_LOGS].create_index("action_type")
+    await db[MongoCollections.ADMIN_AUDIT_LOGS].create_index([("entity_type", 1), ("entity_id", 1)])
+    await db[MongoCollections.ADMIN_AUDIT_LOGS].create_index("timestamp", -1)
     
     logger.info("MongoDB indexes created successfully")
 

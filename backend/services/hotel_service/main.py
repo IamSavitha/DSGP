@@ -42,7 +42,13 @@ async def startup_event():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "hotel-service"}
+    """Health check endpoint with database connectivity checks."""
+    from ...common.health import get_comprehensive_health
+    return await get_comprehensive_health(
+        check_mysql=True,
+        check_redis=True,
+        service_name="hotel-service"
+    )
 
 
 @app.post("/hotels", response_model=HotelResponse, status_code=status.HTTP_201_CREATED)
@@ -51,37 +57,6 @@ async def create_hotel(hotel_data: HotelCreate, db: Session = Depends(get_mysql_
     from .service import HotelService
     service = HotelService(db)
     return service.create_hotel(hotel_data)
-
-
-@app.get("/hotels/{hotel_id}", response_model=HotelResponse)
-async def get_hotel(hotel_id: str, db: Session = Depends(get_mysql_session)):
-    """Get hotel by ID."""
-    from .service import HotelService
-    service = HotelService(db)
-    hotel = service.get_hotel(hotel_id)
-    if not hotel:
-        handle_not_found("Hotel", hotel_id)
-    return hotel
-
-
-@app.put("/hotels/{hotel_id}", response_model=HotelResponse)
-async def update_hotel(hotel_id: str, hotel_data: HotelUpdate, db: Session = Depends(get_mysql_session)):
-    """Update hotel information."""
-    from .service import HotelService
-    service = HotelService(db)
-    hotel = service.update_hotel(hotel_id, hotel_data)
-    if not hotel:
-        handle_not_found("Hotel", hotel_id)
-    return hotel
-
-
-@app.delete("/hotels/{hotel_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_hotel(hotel_id: str, db: Session = Depends(get_mysql_session)):
-    """Delete a hotel listing."""
-    from .service import HotelService
-    service = HotelService(db)
-    if not service.delete_hotel(hotel_id):
-        handle_not_found("Hotel", hotel_id)
 
 
 @app.get("/hotels/search", response_model=HotelSearchResponse)
@@ -120,6 +95,37 @@ async def search_hotels(
         page=page, page_size=page_size
     )
     return service.search_hotels(params)
+
+
+@app.get("/hotels/{hotel_id}", response_model=HotelResponse)
+async def get_hotel(hotel_id: str, db: Session = Depends(get_mysql_session)):
+    """Get hotel by ID."""
+    from .service import HotelService
+    service = HotelService(db)
+    hotel = service.get_hotel(hotel_id)
+    if not hotel:
+        handle_not_found("Hotel", hotel_id)
+    return hotel
+
+
+@app.put("/hotels/{hotel_id}", response_model=HotelResponse)
+async def update_hotel(hotel_id: str, hotel_data: HotelUpdate, db: Session = Depends(get_mysql_session)):
+    """Update hotel information."""
+    from .service import HotelService
+    service = HotelService(db)
+    hotel = service.update_hotel(hotel_id, hotel_data)
+    if not hotel:
+        handle_not_found("Hotel", hotel_id)
+    return hotel
+
+
+@app.delete("/hotels/{hotel_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_hotel(hotel_id: str, db: Session = Depends(get_mysql_session)):
+    """Delete a hotel listing."""
+    from .service import HotelService
+    service = HotelService(db)
+    if not service.delete_hotel(hotel_id):
+        handle_not_found("Hotel", hotel_id)
 
 
 if __name__ == "__main__":

@@ -88,6 +88,12 @@ class BookingResponse(BaseModel):
     # Include listing details
     listing_details: Optional[dict] = None
     
+    # Billing information (if payment completed)
+    subtotal: Optional[Decimal] = None
+    tax_amount: Optional[Decimal] = None
+    total_amount: Optional[Decimal] = None  # Total with tax
+    invoice_number: Optional[str] = None
+    
     class Config:
         from_attributes = True
 

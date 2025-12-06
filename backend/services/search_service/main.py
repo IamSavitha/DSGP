@@ -1,9 +1,13 @@
 """
 Search Service - FastAPI application for unified search across flights, hotels, and cars.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+from datetime import date
 import logging
+
+from .service import UnifiedSearchService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,8 +47,43 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "search-service"}
+    """Health check endpoint with database connectivity checks."""
+    from ...common.health import get_comprehensive_health
+    return await get_comprehensive_health(
+        check_redis=True,
+        service_name="search-service"
+    )
+
+
+@app.get("/search")
+async def unified_search(
+    query: Optional[str] = Query(None, description="General search query"),
+    search_type: Optional[str] = Query(None, description="Filter by type: flight, hotel, car"),
+    city: Optional[str] = Query(None, description="City for hotel/car search"),
+    check_in: Optional[date] = Query(None, description="Check-in date"),
+    check_out: Optional[date] = Query(None, description="Check-out date"),
+    departure_airport: Optional[str] = Query(None, description="Departure airport code"),
+    arrival_airport: Optional[str] = Query(None, description="Arrival airport code"),
+    min_price: Optional[float] = Query(None, ge=0, description="Minimum price filter"),
+    max_price: Optional[float] = Query(None, ge=0, description="Maximum price filter"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100)
+):
+    """Unified search across flights, hotels, and cars."""
+    service = UnifiedSearchService()
+    return await service.unified_search(
+        query=query,
+        search_type=search_type,
+        city=city,
+        check_in=check_in,
+        check_out=check_out,
+        departure_airport=departure_airport,
+        arrival_airport=arrival_airport,
+        min_price=min_price,
+        max_price=max_price,
+        page=page,
+        page_size=page_size
+    )
 
 
 if __name__ == "__main__":

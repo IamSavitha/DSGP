@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy AI service code
 COPY ai_service/ ./ai_service/
 
+# Copy backend code (needed for database models and utilities)
+COPY backend/ ./backend/
+
 # Set Python path
 ENV PYTHONPATH=/app
 

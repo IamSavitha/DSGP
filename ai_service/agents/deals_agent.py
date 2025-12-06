@@ -10,6 +10,20 @@ from decimal import Decimal
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 import json
 
+# Import database models and session
+try:
+    from backend.common.database import get_mysql_context
+    from backend.models.mysql_models import Flight, Hotel, HotelRoom
+except ImportError:
+    # Fallback for local development
+    import sys
+    import os
+    backend_path = os.path.join(os.path.dirname(__file__), '../../backend')
+    if os.path.exists(backend_path):
+        sys.path.insert(0, os.path.abspath(backend_path))
+    from backend.common.database import get_mysql_context
+    from backend.models.mysql_models import Flight, Hotel, HotelRoom
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,35 +106,39 @@ class DealsAgent:
         """Scan flight listings for deals."""
         deals = []
         
-        # In production, this would query the flight database
-        # For now, return mock deals
-        mock_flights = [
-            {
-                "listing_id": "AA123",
-                "listing_type": "flight",
-                "route": "SFO-JFK",
-                "airline": "American Airlines",
-                "current_price": 249.00,
-                "avg_30d_price": 320.00,
-                "available_seats": 3,
-                "departure_date": (datetime.now() + timedelta(days=14)).isoformat()
-            },
-            {
-                "listing_id": "UA456",
-                "listing_type": "flight",
-                "route": "LAX-ORD",
-                "airline": "United Airlines",
-                "current_price": 189.00,
-                "avg_30d_price": 210.00,
-                "available_seats": 12,
-                "departure_date": (datetime.now() + timedelta(days=7)).isoformat()
-            }
-        ]
-        
-        for flight in mock_flights:
-            # Check if it's a deal
-            if self._is_deal(flight):
-                deals.append(flight)
+        try:
+            with get_mysql_context() as db:
+                # Query active flights with available seats
+                flights = db.query(Flight).filter(
+                    Flight.is_active == True,
+                    Flight.available_seats > 0,
+                    Flight.departure_datetime >= datetime.now()  # Only future flights
+                ).limit(100).all()
+                
+                for flight in flights:
+                    current_price = float(flight.base_price)
+                    # Estimate average price as 1.2x current price (simplified heuristic)
+                    # In production, this would be calculated from historical data
+                    avg_30d_price = current_price * 1.2
+                    
+                    flight_deal = {
+                        "listing_id": flight.flight_id,
+                        "listing_type": "flight",
+                        "route": f"{flight.departure_airport}-{flight.arrival_airport}",
+                        "airline": flight.airline_name,
+                        "current_price": current_price,
+                        "avg_30d_price": avg_30d_price,
+                        "available_seats": flight.available_seats,
+                        "departure_date": flight.departure_datetime.isoformat() if flight.departure_datetime else None,
+                        "flight_class": flight.flight_class,
+                        "rating": float(flight.rating) if flight.rating else 0.0
+                    }
+                    
+                    # Check if it's a deal
+                    if self._is_deal(flight_deal):
+                        deals.append(flight_deal)
+        except Exception as e:
+            logger.error(f"Error scanning flight deals: {e}")
         
         return deals
     
@@ -128,36 +146,62 @@ class DealsAgent:
         """Scan hotel listings for deals."""
         deals = []
         
-        mock_hotels = [
-            {
-                "listing_id": "HTL-001",
-                "listing_type": "hotel",
-                "name": "Grand Plaza Hotel",
-                "city": "San Francisco",
-                "current_price": 159.00,
-                "avg_30d_price": 220.00,
-                "available_rooms": 2,
-                "amenities": ["wifi", "breakfast", "parking"],
-                "pet_friendly": True,
-                "refundable": True
-            },
-            {
-                "listing_id": "HTL-002",
-                "listing_type": "hotel",
-                "name": "Downtown Suites",
-                "city": "New York",
-                "current_price": 299.00,
-                "avg_30d_price": 350.00,
-                "available_rooms": 8,
-                "amenities": ["wifi", "gym", "pool"],
-                "pet_friendly": False,
-                "refundable": True
-            }
-        ]
-        
-        for hotel in mock_hotels:
-            if self._is_deal(hotel):
-                deals.append(hotel)
+        try:
+            with get_mysql_context() as db:
+                # Query active hotels with available rooms
+                hotels = db.query(Hotel).filter(
+                    Hotel.is_active == True
+                ).limit(100).all()
+                
+                for hotel in hotels:
+                    # Get total available rooms for this hotel
+                    from sqlalchemy import func
+                    total_available = db.query(func.sum(HotelRoom.available_rooms)).filter(
+                        HotelRoom.hotel_id == hotel.hotel_id,
+                        HotelRoom.is_active == True
+                    ).scalar() or 0
+                    
+                    if total_available == 0:
+                        continue
+                    
+                    # Get minimum price per night from rooms
+                    min_price = db.query(func.min(HotelRoom.price_per_night)).filter(
+                        HotelRoom.hotel_id == hotel.hotel_id,
+                        HotelRoom.is_active == True
+                    ).scalar() or 0
+                    
+                    if min_price == 0:
+                        continue
+                    
+                    current_price = float(min_price)
+                    # Estimate average price as 1.25x current price (simplified heuristic)
+                    avg_30d_price = current_price * 1.25
+                    
+                    # Parse amenities
+                    amenities_list = []
+                    if hotel.amenities:
+                        amenities_list = [a.strip() for a in hotel.amenities.split(',')]
+                    
+                    hotel_deal = {
+                        "listing_id": hotel.hotel_id,
+                        "listing_type": "hotel",
+                        "name": hotel.hotel_name,
+                        "city": hotel.city,
+                        "current_price": current_price,
+                        "avg_30d_price": avg_30d_price,
+                        "available_rooms": int(total_available),
+                        "amenities": amenities_list,
+                        "pet_friendly": "pet" in hotel.amenities.lower() if hotel.amenities else False,
+                        "refundable": True,  # Assume refundable by default
+                        "star_rating": hotel.star_rating or 0,
+                        "rating": float(hotel.rating) if hotel.rating else 0.0
+                    }
+                    
+                    # Check if it's a deal
+                    if self._is_deal(hotel_deal):
+                        deals.append(hotel_deal)
+        except Exception as e:
+            logger.error(f"Error scanning hotel deals: {e}")
         
         return deals
     
@@ -195,15 +239,23 @@ class DealsAgent:
         # Price drop score
         current = deal.get("current_price", 0)
         avg = deal.get("avg_30d_price", current)
-        if avg > 0:
+        if avg > 0 and current > 0:
             drop_pct = (avg - current) / avg
-            score += min(drop_pct * 100, self.DEAL_SCORE_WEIGHTS["price_drop"])
+            # Scale price drop score (max 40 points)
+            price_score = min(drop_pct * 100, self.DEAL_SCORE_WEIGHTS["price_drop"])
+            score += price_score
         
         # Limited inventory score
         availability = deal.get("available_seats", deal.get("available_rooms", 100))
         if availability <= self.LIMITED_INVENTORY_THRESHOLD:
             inventory_score = (self.LIMITED_INVENTORY_THRESHOLD - availability + 1) * 6
             score += min(inventory_score, self.DEAL_SCORE_WEIGHTS["limited_inventory"])
+        
+        # Rating score (if available)
+        rating = deal.get("rating", 0)
+        if rating > 0:
+            rating_score = (rating / 5.0) * self.DEAL_SCORE_WEIGHTS["rating"]
+            score += rating_score
         
         return {
             **deal,

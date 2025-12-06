@@ -35,8 +35,8 @@ aiohttp==3.9.1
 requests==2.31.0
 
 # Data Processing
-pandas==2.1.4
-numpy==1.26.3
+pandas==2.2.0
+numpy==1.26.4
 
 # WebSockets
 websockets==12.0

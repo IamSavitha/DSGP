@@ -27,6 +27,12 @@ case $SERVICE_NAME in
   search_service)
     MODULE="backend.services.search_service.main"
     ;;
+  email_service)
+    MODULE="backend.services.email_service.main"
+    ;;
+  booking_service)
+    MODULE="backend.services.booking_service.main"
+    ;;
   *)
     echo "Unknown service: $SERVICE_NAME"
     exit 1

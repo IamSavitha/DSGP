@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     num_passengers INT DEFAULT 1,
     num_rooms INT DEFAULT 1,
     num_nights INT DEFAULT 1,
-    status ENUM('pending', 'confirmed', 'cancelled', 'completed') DEFAULT 'pending',
+    status ENUM('pending', 'confirmed', 'cancelled', 'completed', 'refund_pending') DEFAULT 'pending',
     total_price DECIMAL(10, 2) NOT NULL,
     booking_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

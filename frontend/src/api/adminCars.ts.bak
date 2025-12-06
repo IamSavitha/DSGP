@@ -1,0 +1,126 @@
+/**
+ * Admin Car Management API functions
+ */
+
+const isDocker = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+const ADMIN_API_BASE_URL = isDocker ? '/api/admin' : 'http://localhost:8006';
+const CAR_API_BASE_URL = '/api/cars';
+
+export interface CarCreateData {
+  car_id: string;
+  car_type: 'sedan' | 'suv' | 'compact' | 'luxury' | 'van';
+  make: string;
+  model: string;
+  year: number;
+  provider_name: string;
+  transmission_type: 'automatic' | 'manual';
+  seats: number;
+  doors: number;
+  daily_rental_price: number;
+  pickup_location: string;
+  city?: string;
+  state?: string;
+}
+
+export interface CarUpdateData {
+  car_type?: 'sedan' | 'suv' | 'compact' | 'luxury' | 'van';
+  make?: string;
+  model?: string;
+  year?: number;
+  provider_name?: string;
+  transmission_type?: 'automatic' | 'manual';
+  seats?: number;
+  doors?: number;
+  daily_rental_price?: number;
+  pickup_location?: string;
+  city?: string;
+  state?: string;
+  is_available?: boolean;
+  is_active?: boolean;
+}
+
+export interface CarResponse {
+  car_id: string;
+  car_type: string;
+  make: string;
+  model: string;
+  year: number;
+  provider_name: string;
+  transmission_type: string;
+  seats: number;
+  doors: number;
+  daily_rental_price: string;
+  pickup_location: string;
+  city?: string;
+  state?: string;
+  is_available: boolean;
+  is_active: boolean;
+  rating: number;
+  total_reviews: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function getAdminToken(): string | null {
+  return localStorage.getItem('admin_token') || localStorage.getItem('token');
+}
+
+export async function createCar(data: CarCreateData): Promise<{ message: string; car: CarResponse }> {
+  const token = getAdminToken();
+  if (!token) throw new Error('Admin authentication required');
+
+  const response = await fetch(`${ADMIN_API_BASE_URL}/cars`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create car');
+  }
+  return await response.json();
+}
+
+export async function updateCar(carId: string, data: CarUpdateData): Promise<{ message: string; car: CarResponse }> {
+  const token = getAdminToken();
+  if (!token) throw new Error('Admin authentication required');
+
+  const response = await fetch(`${ADMIN_API_BASE_URL}/cars/${carId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update car');
+  }
+  return await response.json();
+}
+
+export async function deleteCar(carId: string): Promise<{ message: string }> {
+  const token = getAdminToken();
+  if (!token) throw new Error('Admin authentication required');
+
+  const response = await fetch(`${ADMIN_API_BASE_URL}/cars/${carId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete car');
+  }
+  return { message: 'Car deleted successfully' };
+}
+
+export async function getAllCars(): Promise<CarResponse[]> {
+  const response = await fetch(`${CAR_API_BASE_URL}/search?page=1&page_size=1000`);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch cars');
+  }
+  const data = await response.json();
+  return data.cars || [];
+}

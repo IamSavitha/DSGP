@@ -108,8 +108,8 @@ services:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 90s
     networks:
       - kayak_network
 
@@ -126,6 +126,7 @@ services:
       KAFKA_CLUSTERS_0_NAME: kayak_cluster
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      KAFKA_CLUSTERS_0_READONLY: "false"
     networks:
       - kayak_network
 
@@ -397,6 +398,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      FLIGHT_SERVICE_URL: http://flight-service:8000
+      HOTEL_SERVICE_URL: http://hotel-service:8000
+      CAR_SERVICE_URL: http://car-service:8000
     ports:
       - "8007:8000"
     volumes:
@@ -439,6 +443,78 @@ services:
     networks:
       - kayak_network
 
+  # ==================== Email Service ====================
+
+  email-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_email_service
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: email_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
+  # ==================== Booking Service ====================
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: kayak_booking_service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      SERVICE_NAME: booking_service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: kayak_db
+      MYSQL_USER: kayak_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kayak_pass}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8009:8000"
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - kayak_network
+
   # ==================== Frontend ====================
 
   frontend:
@@ -466,7 +542,13 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      REACT_APP_API_BASE_URL: http://localhost:8001
+      VITE_API_BASE_URL: http://user-service:8000
+      VITE_FLIGHT_API_URL: http://flight-service:8000
+      VITE_HOTEL_API_URL: http://hotel-service:8000
+      VITE_CAR_API_URL: http://car-service:8000
+      VITE_ADMIN_API_URL: http://admin-service:8000
+      VITE_SEARCH_API_URL: http://search-service:8000
+      VITE_BOOKING_API_URL: http://booking-service:8000
     networks:
       - kayak_network
 

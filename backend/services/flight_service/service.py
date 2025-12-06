@@ -94,11 +94,37 @@ class FlightService:
                 delta = flight.arrival_datetime - flight.departure_datetime
                 flight.duration_minutes = int(delta.total_seconds() / 60)
         
+        # Track old price for history logging
+        old_price = float(flight.base_price) if flight.base_price else None
+        
         self.db.commit()
         self.db.refresh(flight)
         
+        # Log price history if price changed
+        if 'base_price' in update_data:
+            new_price = float(flight.base_price) if flight.base_price else None
+            if old_price and new_price and old_price != new_price:
+                # Log price history asynchronously (non-blocking)
+                import asyncio
+                from ...services.analytics_service.service import AnalyticsService
+                
+                try:
+                    analytics = AnalyticsService()
+                    asyncio.create_task(analytics.log_price_history(
+                        listing_id=flight_id,
+                        listing_type="flight",
+                        price=new_price,
+                        available_inventory=flight.available_seats,
+                        source="manual"
+                    ))
+                    logger.debug(f"Price history logged for flight {flight_id}: ${old_price} -> ${new_price}")
+                except Exception as e:
+                    logger.error(f"Failed to log price history: {e}")
+        
         # Invalidate cache
         self.cache.delete(CacheKeys.flight(flight_id))
+        # Also invalidate search cache patterns
+        self.cache.delete_pattern(f"{CacheKeys.PREFIX}:flight_search:*")
         
         logger.info(f"Updated flight: {flight_id}")
         return flight
@@ -112,7 +138,10 @@ class FlightService:
         flight.is_active = False
         self.db.commit()
         
+        # Invalidate cache
         self.cache.delete(CacheKeys.flight(flight_id))
+        # Also invalidate search cache patterns
+        self.cache.delete_pattern(f"{CacheKeys.PREFIX}:flight_search:*")
         
         logger.info(f"Deleted flight: {flight_id}")
         return True
@@ -136,12 +165,17 @@ class FlightService:
             query = query.filter(Flight.arrival_airport == params.arrival_airport.upper())
         
         if params.departure_date:
+            # Allow flights within a range around the requested date (±30 days for flexibility)
+            # This ensures users find flights even if exact date doesn't match
             start_of_day = datetime.combine(params.departure_date, datetime.min.time())
             end_of_day = datetime.combine(params.departure_date, datetime.max.time())
+            # Add 30 days buffer to find flights near the requested date
+            start_range = start_of_day - timedelta(days=30)
+            end_range = end_of_day + timedelta(days=30)
             query = query.filter(
                 and_(
-                    Flight.departure_datetime >= start_of_day,
-                    Flight.departure_datetime <= end_of_day
+                    Flight.departure_datetime >= start_range,
+                    Flight.departure_datetime <= end_range
                 )
             )
         

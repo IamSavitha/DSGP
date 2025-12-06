@@ -145,7 +145,8 @@ class Flight(Base):
     duration_minutes = Column(Integer)
     
     # Class and Pricing
-    flight_class = Column(Enum(FlightClass), default=FlightClass.ECONOMY)
+    # Use String instead of Enum to avoid case-sensitivity issues with MySQL enum
+    flight_class = Column(String(20), default=FlightClass.ECONOMY.value)
     base_price = Column(DECIMAL(10, 2), nullable=False)
     
     # Availability
@@ -223,7 +224,8 @@ class HotelRoom(Base):
     hotel_id = Column(String(50), ForeignKey("hotels.hotel_id"), nullable=False)
     
     # Room Information
-    room_type = Column(Enum(RoomType), nullable=False)
+    # Use String instead of Enum to avoid case-sensitivity issues with MySQL enum
+    room_type = Column(String(20), nullable=False)
     room_number = Column(String(10))
     
     # Pricing
@@ -256,7 +258,8 @@ class Car(Base):
     car_id = Column(String(50), primary_key=True, index=True)
     
     # Car Information
-    car_type = Column(Enum(CarType), nullable=False)
+    # Use String instead of Enum to avoid case-sensitivity issues with MySQL enum
+    car_type = Column(String(20), nullable=False)
     make = Column(String(50), nullable=False)
     model = Column(String(50), nullable=False)
     year = Column(Integer, nullable=False)
@@ -265,7 +268,8 @@ class Car(Base):
     provider_name = Column(String(100), nullable=False, index=True)
     
     # Technical Details
-    transmission_type = Column(Enum(TransmissionType), default=TransmissionType.AUTOMATIC)
+    # Use String instead of Enum to avoid case-sensitivity issues with MySQL enum
+    transmission_type = Column(String(20), default='AUTOMATIC')
     seats = Column(Integer, nullable=False)
     doors = Column(Integer, default=4)
     
@@ -307,7 +311,8 @@ class Booking(Base):
     user_id = Column(String(11), ForeignKey("users.user_id"), nullable=False)
     
     # Booking Type
-    booking_type = Column(Enum(BookingType), nullable=False)
+    # Use String instead of Enum to avoid case-sensitivity issues with MySQL's ENUM type
+    booking_type = Column(String(20), nullable=False)
     
     # Reference to the booked item
     listing_id = Column(String(50), nullable=False)  # flight_id, hotel_id, or car_id
@@ -324,7 +329,8 @@ class Booking(Base):
     num_nights = Column(Integer, default=1)
     
     # Status
-    status = Column(Enum(BookingStatus), default=BookingStatus.PENDING)
+    # Use String instead of Enum to avoid case-sensitivity issues with MySQL's ENUM type
+    status = Column(String(20), default=BookingStatus.PENDING.value)
     
     # Pricing
     total_price = Column(DECIMAL(10, 2), nullable=False)
@@ -357,7 +363,7 @@ class Billing(Base):
     booking_id = Column(String(50), ForeignKey("bookings.booking_id"), nullable=False)
     
     # Transaction Details
-    booking_type = Column(Enum(BookingType), nullable=False)
+    booking_type = Column(String(20), nullable=False)  # Changed from Enum to String to match Booking model
     transaction_date = Column(DateTime, default=func.now())
     
     # Amount
@@ -366,8 +372,8 @@ class Billing(Base):
     total_amount = Column(DECIMAL(10, 2), nullable=False)
     
     # Payment
-    payment_method = Column(Enum(PaymentMethod), nullable=False)
-    payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
+    payment_method = Column(String(20), nullable=False)  # Changed from Enum to String to avoid case-sensitivity issues
+    payment_status = Column(String(20), default=PaymentStatus.PENDING.value)  # Changed from Enum to String
     
     # Card Details (last 4 digits only)
     card_last_four = Column(String(4))
@@ -411,7 +417,7 @@ class Admin(Base):
     zip_code = Column(String(10))
     
     # Access
-    role = Column(Enum(AdminRole), default=AdminRole.ADMIN)
+    role = Column(String(20), default="admin")  # Changed from Enum to String to avoid case-sensitivity issues
     password_hash = Column(String(255), nullable=False)
     
     # Status

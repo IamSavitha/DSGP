@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plane, Hotel, Car, Search, Calendar, Users, MapPin, TrendingDown, Sparkles, Bell, ArrowRight, Star, CheckCircle2, Globe } from 'lucide-react';
+import { Plane, Hotel, Car, Search, Calendar, Users, MapPin, TrendingDown, Sparkles, Bell, ArrowRight, Star, CheckCircle2, Globe, Package } from 'lucide-react';
 
 type SearchType = 'flights' | 'hotels' | 'cars';
 
@@ -110,14 +110,15 @@ const HomePage: React.FC = () => {
               icon={<TrendingDown />}
             />
             <FeatureCard
+              title="AI-Powered Trip Bundles"
+              description="Get complete packages: Flight + Hotel + Car combinations with AI-optimized pricing and fit scores."
+              icon={<Package />}
+              onClick={() => navigate('/bundles')}
+            />
+            <FeatureCard
               title="AI-Powered Recommendations"
               description="Our smart concierge finds personalized deals and bundles just for you."
               icon={<Sparkles />}
-            />
-            <FeatureCard
-              title="Price Alerts"
-              description="Set alerts and we'll notify you when prices drop for your dream trip."
-              icon={<Bell />}
             />
           </div>
         </div>
@@ -241,10 +242,14 @@ interface FeatureCardProps {
   title: string;
   description: string;
   icon: React.ReactNode;
+  onClick?: () => void;
 }
 
-const FeatureCard: React.FC<FeatureCardProps> = ({ title, description, icon }) => (
-  <div className="text-center group p-8 rounded-2xl bg-gradient-to-br from-white to-slate-50/50 border-2 border-slate-100 hover:border-slate-300 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 animate-fade-in">
+const FeatureCard: React.FC<FeatureCardProps> = ({ title, description, icon, onClick }) => (
+  <div 
+    onClick={onClick}
+    className={`text-center group p-8 rounded-2xl bg-gradient-to-br from-white to-slate-50/50 border-2 border-slate-100 hover:border-slate-300 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 animate-fade-in ${onClick ? 'cursor-pointer' : ''}`}
+  >
     <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-slate-600 to-slate-700 mb-6 group-hover:from-slate-700 group-hover:to-slate-800 transition-all duration-300 shadow-lg shadow-slate-400/20 group-hover:shadow-xl group-hover:shadow-slate-400/30 group-hover:scale-110 group-hover:rotate-3">
       {React.cloneElement(icon as React.ReactElement, { className: 'text-white', size: 28 })}
     </div>

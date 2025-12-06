@@ -2,13 +2,16 @@
 Admin Service - Business logic for admin operations and analytics.
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from typing import Optional, List
 from datetime import datetime
+from decimal import Decimal
 import math
+import bcrypt
 
-from ...models.mysql_models import User, Flight, Hotel, Car, Booking, Billing
+from ...models.mysql_models import User, Flight, Hotel, Car, Booking, Billing, Admin
 from ...common.database import get_async_mongodb, MongoCollections
+from ...schemas.admin_schemas import AdminCreate, AdminUpdate
 
 
 class AdminService:
@@ -229,4 +232,166 @@ class AdminService:
             results.extend([{"type": "car", "id": c.car_id, "name": f"{c.make} {c.model}"} for c in cars])
         
         return {"listings": results, "page": page, "page_size": page_size}
+    
+    def list_flights(self, page: int = 1, page_size: int = 100) -> dict:
+        """List all flights with pagination."""
+        offset = (page - 1) * page_size
+        flights = self.db.query(Flight).offset(offset).limit(page_size).all()
+        total = self.db.query(Flight).count()
+
+        return {
+            "flights": [
+                {
+                    "flight_id": f.flight_id,
+                    "airline_name": f.airline_name,
+                    "operator_name": f.operator_name,
+                    "departure_airport": f.departure_airport,
+                    "arrival_airport": f.arrival_airport,
+                        "departure_datetime": str(f.departure_datetime),
+                    "arrival_datetime": str(f.arrival_datetime),
+                    "flight_class": f.flight_class,
+                    "base_price": float(f.base_price),
+                    "total_seats": f.total_seats,
+                    "available_seats": f.available_seats,
+                    "is_active": f.is_active,
+                    "created_at": str(f.created_at),
+                    "updated_at": str(f.updated_at)
+                }
+                for f in flights
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+
+    def create_admin(self, admin_data: AdminCreate) -> Admin:
+        """Create a new admin."""
+        # Check for existing admin
+        existing = self.db.query(Admin).filter(
+            or_(
+                Admin.admin_id == admin_data.admin_id,
+                Admin.email == admin_data.email
+            )
+        ).first()
+        
+        if existing:
+            raise ValueError(f"Admin with ID {admin_data.admin_id} or email {admin_data.email} already exists")
+        
+        # Hash password
+        password_bytes = admin_data.password.encode('utf-8')
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
+        password_hash = bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode('utf-8')
+        
+        # Create admin
+        admin = Admin(
+            admin_id=admin_data.admin_id,
+            first_name=admin_data.first_name,
+            last_name=admin_data.last_name,
+            email=admin_data.email,
+            phone_number=admin_data.phone_number,
+            address=admin_data.address,
+            city=admin_data.city,
+            state=admin_data.state,
+            zip_code=admin_data.zip_code,
+            role=admin_data.role.value if hasattr(admin_data.role, 'value') else str(admin_data.role),
+            password_hash=password_hash
+        )
+        
+        self.db.add(admin)
+        self.db.commit()
+        self.db.refresh(admin)
+        
+        return admin
+    
+    def authenticate_admin(self, email: str, password: str) -> Optional[Admin]:
+        """Authenticate admin with email and password."""
+        admin = self.db.query(Admin).filter(Admin.email == email).first()
+        
+        if not admin:
+            return None
+        
+        if not admin.is_active:
+            return None
+        
+        # Verify password
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
+        
+        if not bcrypt.checkpw(password_bytes, admin.password_hash.encode('utf-8')):
+            return None
+        
+        # Update last login
+        admin.last_login = datetime.utcnow()
+        self.db.commit()
+        
+        return admin
+    
+    def list_bookings(
+        self, 
+        page: int = 1, 
+        page_size: int = 100,
+        booking_type: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> dict:
+        """List all bookings with pagination and filters."""
+        offset = (page - 1) * page_size
+        query = self.db.query(Booking)
+        
+        if booking_type:
+            query = query.filter(Booking.booking_type == booking_type.lower())
+        if status:
+            query = query.filter(Booking.status == status.lower())
+        
+        total = query.count()
+        bookings = query.order_by(Booking.created_at.desc()).offset(offset).limit(page_size).all()
+        
+        return {
+            "bookings": [
+                {
+                    "booking_id": b.booking_id,
+                    "user_id": b.user_id,
+                    "booking_type": b.booking_type,
+                    "listing_id": b.listing_id,
+                    "check_in_date": str(b.check_in_date),
+                    "check_out_date": str(b.check_out_date) if b.check_out_date else None,
+                    "num_passengers": b.num_passengers,
+                    "num_rooms": b.num_rooms,
+                    "num_nights": b.num_nights,
+                    "status": b.status,
+                    "total_price": float(b.total_price),
+                    "booking_date": str(b.booking_date) if b.booking_date else None,
+                    "created_at": str(b.created_at),
+                    "updated_at": str(b.updated_at)
+                }
+                for b in bookings
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    
+    def get_dashboard_stats(self) -> dict:
+        """Get dashboard statistics."""
+        total_users = self.db.query(User).count()
+        total_bookings = self.db.query(Booking).count()
+        
+        # Get total revenue from completed payments
+        total_revenue = self.db.query(
+            func.sum(Billing.total_amount)
+        ).filter(Billing.payment_status == "completed").scalar() or Decimal(0)
+        
+        # Get active listings count
+        active_flights = self.db.query(Flight).filter(Flight.is_active == True).count()
+        active_hotels = self.db.query(Hotel).filter(Hotel.is_active == True).count()
+        active_cars = self.db.query(Car).filter(Car.is_available == True).count()
+        active_listings = active_flights + active_hotels + active_cars
+        
+        return {
+            "total_users": total_users,
+            "total_revenue": float(total_revenue),
+            "total_bookings": total_bookings,
+            "active_listings": active_listings
+        }
 

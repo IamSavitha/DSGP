@@ -297,3 +297,214 @@ class UserJourneyDocument(BaseModel):
     # Timestamp
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+# ==================== User Preferences ====================
+
+class UserPreferencesDocument(BaseModel):
+    """User preferences document for tracking user travel preferences."""
+    
+    user_id: str = Field(..., description="User ID (unique)")
+    
+    # Travel Preferences
+    preferred_departure_airports: List[str] = Field(default_factory=list)
+    preferred_airlines: List[str] = Field(default_factory=list)
+    preferred_hotel_types: List[str] = Field(default_factory=list)
+    preferred_car_types: List[str] = Field(default_factory=list)
+    
+    # Budget
+    budget_range: Optional[dict] = Field(default_factory=lambda: {
+        "flights": {"min": 0, "max": 0},
+        "hotels": {"min": 0, "max": 0},
+        "cars": {"min": 0, "max": 0}
+    })
+    
+    # Behavioral Data
+    travel_frequency: Optional[str] = Field(None, description="weekly, monthly, quarterly, yearly")
+    average_trip_duration: Optional[int] = Field(None, description="days")
+    typical_destinations: List[str] = Field(default_factory=list)
+    
+    # Preferences
+    preferred_class: Optional[str] = Field(None, description="economy, business, first")
+    seat_preference: Optional[str] = Field(None, description="window, aisle, no_preference")
+    amenities_priority: List[str] = Field(default_factory=list)
+    
+    # ML Features (for AI)
+    click_patterns: Optional[dict] = Field(default_factory=dict)
+    booking_patterns: Optional[dict] = Field(default_factory=dict)
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "123-45-6789",
+                "preferred_departure_airports": ["SFO", "OAK", "SJC"],
+                "preferred_airlines": ["United", "Delta"],
+                "preferred_hotel_types": ["luxury", "boutique"],
+                "budget_range": {
+                    "flights": {"min": 200, "max": 800},
+                    "hotels": {"min": 100, "max": 300}
+                },
+                "typical_destinations": ["NYC", "LAX", "SEA"]
+            }
+        }
+
+
+# ==================== Price History ====================
+
+class PriceHistoryDocument(BaseModel):
+    """Price history document for tracking listing price changes."""
+    
+    listing_id: str = Field(..., description="Listing ID")
+    listing_type: str = Field(..., description="flight, hotel, car")
+    
+    # Price Point
+    price: float = Field(..., description="Price at this point in time")
+    available_inventory: Optional[int] = Field(None, description="Seats/rooms/cars available")
+    
+    # Metadata
+    source: str = Field(default="scheduled_scan", description="scheduled_scan, user_search, manual")
+    
+    # Timestamp
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "listing_id": "AA123",
+                "listing_type": "flight",
+                "price": 450.00,
+                "available_inventory": 25,
+                "source": "scheduled_scan",
+                "timestamp": "2025-01-15T10:00:00Z"
+            }
+        }
+
+
+# ==================== Admin Audit Log ====================
+
+class AdminAuditLog(BaseModel):
+    """Admin audit log document for tracking admin actions."""
+    
+    audit_id: str = Field(..., description="Unique audit log identifier")
+    
+    # Admin Reference
+    admin_id: str = Field(..., description="Admin ID")
+    admin_email: Optional[str] = Field(None, description="Admin email")
+    
+    # Action Details
+    action_type: str = Field(..., description="create, update, delete, etc.")
+    action_category: str = Field(..., description="user_mgmt, inventory, financial, system")
+    
+    # Target Entity
+    entity_type: str = Field(..., description="user, flight, hotel, car, booking, billing")
+    entity_id: str = Field(..., description="ID of the entity being acted upon")
+    
+    # Changes Made
+    changes: List[dict] = Field(default_factory=list, description="List of field changes with old/new values")
+    
+    # Request Details
+    ip_address: Optional[str] = Field(None)
+    user_agent: Optional[str] = Field(None)
+    endpoint: str = Field(..., description="API endpoint")
+    method: str = Field(..., description="HTTP method")
+    
+    # Status
+    status: str = Field(default="success", description="success, failed, unauthorized")
+    error_message: Optional[str] = Field(None)
+    
+    # Timestamp
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "audit_id": "AUDIT-XYZ123",
+                "admin_id": "ADMIN-789",
+                "admin_email": "admin@kayak.com",
+                "action_type": "update_flight",
+                "action_category": "inventory_management",
+                "entity_type": "flight",
+                "entity_id": "AA123",
+                "changes": [
+                    {
+                        "field": "base_price",
+                        "old_value": 500.00,
+                        "new_value": 450.00
+                    }
+                ],
+                "ip_address": "192.168.1.100",
+                "endpoint": "PUT /flights/AA123",
+                "method": "PUT",
+                "status": "success"
+            }
+        }
+
+
+# ==================== Chat Session Models ====================
+
+class ChatMessage(BaseModel):
+    """Individual chat message in a conversation."""
+    
+    role: str = Field(..., description="user or assistant")
+    content: str = Field(..., description="Message content")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Structured data for assistant responses
+    recommendations: Optional[List[dict]] = Field(default_factory=list, description="Bundle/recommendation data if applicable")
+    clarification_needed: Optional[bool] = Field(default=False)
+
+
+class ChatSessionDocument(BaseModel):
+    """Chat session document for storing conversation history in MongoDB."""
+    
+    session_id: str = Field(..., description="Unique session identifier")
+    user_id: Optional[str] = Field(None, description="User ID if authenticated")
+    
+    # Conversation
+    messages: List[ChatMessage] = Field(default_factory=list, description="List of messages in conversation")
+    
+    # Context (maintains conversation state)
+    context: Optional[dict] = Field(default_factory=dict, description="Session context for conversation continuity")
+    
+    # Session Metadata
+    agent_version: str = Field(default="concierge-v1.0")
+    
+    # Timestamps
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    ended_at: Optional[datetime] = Field(None, description="NULL if active")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "session_id": "CHAT-789GHI",
+                "user_id": "123-45-6789",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "I want a weekend trip to Miami under $1500",
+                        "timestamp": "2025-01-15T10:30:00Z"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "I found some great options for you...",
+                        "timestamp": "2025-01-15T10:30:15Z",
+                        "recommendations": [],
+                        "clarification_needed": False
+                    }
+                ],
+                "context": {
+                    "destination": "Miami",
+                    "budget": 1500,
+                    "dates": "flexible"
+                },
+                "agent_version": "concierge-v1.0",
+                "started_at": "2025-01-15T10:30:00Z",
+                "last_activity": "2025-01-15T10:45:00Z",
+                "ended_at": None
+            }
+        }
+

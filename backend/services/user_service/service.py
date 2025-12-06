@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional
 from passlib.context import CryptContext
+import bcrypt as bcrypt_lib
 import logging
 
 from ...models.mysql_models import User, Booking
@@ -15,8 +16,9 @@ from ...kafka.producer import event_publisher
 
 logger = logging.getLogger(__name__)
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing - use bcrypt directly to avoid passlib bug detection issue
+import bcrypt as bcrypt_lib
+pwd_context = None  # Will use bcrypt_lib directly
 
 
 class UserService:
@@ -39,8 +41,11 @@ class UserService:
         if existing:
             raise DuplicateUserException(user_data.user_id)
         
-        # Hash password
-        password_hash = pwd_context.hash(user_data.password)
+        # Hash password using bcrypt directly (avoid passlib bug detection issue)
+        password_bytes = user_data.password.encode('utf-8')
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
+        password_hash = bcrypt_lib.hashpw(password_bytes, bcrypt_lib.gensalt()).decode('utf-8')
         
         # Create user
         user = User(
@@ -194,7 +199,7 @@ class UserService:
         if not user:
             return None
         
-        if not pwd_context.verify(password, user.password_hash):
+        if not bcrypt_lib.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
             return None
         
         return user

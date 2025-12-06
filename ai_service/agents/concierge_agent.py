@@ -506,13 +506,25 @@ class ConciergeAgent:
                 return "I can help you find flights! Please tell me your departure and arrival airports, for example: 'flights from SFO to NYC' or 'how many flights from LAX to MIA'."
             
             with get_mysql_context() as db:
+                from sqlalchemy import or_
+                
                 query = db.query(Flight).filter(Flight.is_active == True)
                 
                 if departure_airport:
-                    query = query.filter(Flight.departure_airport == departure_airport.upper())
+                    dep = departure_airport.upper()
+                    # Handle "NYC" as shorthand for any New York airport
+                    if dep == "NYC":
+                        query = query.filter(Flight.departure_airport.in_(["JFK", "LGA", "EWR"]))
+                    else:
+                        query = query.filter(Flight.departure_airport == dep)
                 
                 if arrival_airport:
-                    query = query.filter(Flight.arrival_airport == arrival_airport.upper())
+                    arr = arrival_airport.upper()
+                    # Handle "NYC" as shorthand for any New York airport
+                    if arr == "NYC":
+                        query = query.filter(Flight.arrival_airport.in_(["JFK", "LGA", "EWR"]))
+                    else:
+                        query = query.filter(Flight.arrival_airport == arr)
                 
                 flights = query.all()
                 

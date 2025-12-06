@@ -1,0 +1,349 @@
+/**
+ * Admin Hotel Management API functions
+ */
+
+const isDocker = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+const ADMIN_API_BASE_URL = isDocker ? '/api/admin' : 'http://localhost:8006';
+const HOTEL_API_BASE_URL = '/api/hotels';
+
+export interface HotelCreateData {
+  hotel_id: string;
+  hotel_name: string;
+  description?: string;
+  address: string;
+  city: string;
+  state?: string;
+  zip_code?: string;
+  star_rating?: number;
+  amenities?: string;
+  phone_number?: string;
+  email?: string;
+  website?: string;
+}
+
+export interface HotelUpdateData {
+  hotel_name?: string;
+  description?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  star_rating?: number;
+  amenities?: string;
+  phone_number?: string;
+  email?: string;
+  website?: string;
+  is_active?: boolean;
+}
+
+export interface HotelRoomCreateData {
+  room_id: string;
+  room_type: 'single' | 'double' | 'suite' | 'deluxe';
+  room_number?: string;
+  price_per_night: number;
+  max_occupancy: number;
+  total_rooms: number;
+}
+
+export interface HotelRoomUpdateData {
+  price_per_night?: number;
+  max_occupancy?: number;
+  total_rooms?: number;
+  available_rooms?: number;
+  is_active?: boolean;
+}
+
+export interface HotelRoomResponse {
+  room_id: string;
+  hotel_id: string;
+  room_type: string;
+  room_number?: string;
+  price_per_night: string;
+  max_occupancy: number;
+  total_rooms: number;
+  available_rooms: number;
+  is_active: boolean;
+}
+
+export interface HotelResponse {
+  hotel_id: string;
+  hotel_name: string;
+  description?: string;
+  address: string;
+  city: string;
+  state?: string;
+  zip_code?: string;
+  star_rating?: number;
+  rating: number;
+  total_reviews: number;
+  amenities?: string;
+  phone_number?: string;
+  email?: string;
+  website?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  rooms?: HotelRoomResponse[];
+}
+
+/**
+ * Get admin token from localStorage
+ */
+function getAdminToken(): string | null {
+  return localStorage.getItem('admin_token') || localStorage.getItem('token');
+}
+
+/**
+ * Create a new hotel
+ */
+export async function createHotel(data: HotelCreateData): Promise<HotelResponse> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const errorMessage = error.detail || error.message || 'Failed to create hotel';
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    return result.hotel || result;
+  } catch (error) {
+    console.error('Create hotel error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update a hotel
+ */
+export async function updateHotel(
+  hotelId: string,
+  data: HotelUpdateData
+): Promise<HotelResponse> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels/${hotelId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const errorMessage = error.detail || error.message || 'Failed to update hotel';
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    return result.hotel || result;
+  } catch (error) {
+    console.error('Update hotel error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a hotel
+ */
+export async function deleteHotel(hotelId: string): Promise<{ message: string }> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels/${hotelId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const errorMessage = error.detail || error.message || 'Failed to delete hotel';
+      throw new Error(errorMessage);
+    }
+
+    return { message: 'Hotel deleted successfully' };
+  } catch (error) {
+    console.error('Delete hotel error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all hotels
+ */
+export async function getAllHotels(): Promise<HotelResponse[]> {
+  try {
+    const response = await fetch(`${HOTEL_API_BASE_URL}/hotels/search?page=1&page_size=1000`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch hotels');
+    }
+
+    const data = await response.json();
+    return data.hotels || [];
+  } catch (error) {
+    console.error('Get hotels error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get hotel rooms
+ */
+export async function getHotelRooms(hotelId: string): Promise<HotelRoomResponse[]> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels/${hotelId}/rooms`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch rooms');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Get hotel rooms error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create a hotel room
+ */
+export async function createHotelRoom(
+  hotelId: string,
+  data: HotelRoomCreateData
+): Promise<HotelRoomResponse> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels/${hotelId}/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const errorMessage = error.detail || error.message || 'Failed to create room';
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    return result.room || result;
+  } catch (error) {
+    console.error('Create hotel room error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update a hotel room
+ */
+export async function updateHotelRoom(
+  hotelId: string,
+  roomId: string,
+  data: HotelRoomUpdateData
+): Promise<HotelRoomResponse> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels/${hotelId}/rooms/${roomId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const errorMessage = error.detail || error.message || 'Failed to update room';
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    return result.room || result;
+  } catch (error) {
+    console.error('Update hotel room error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a hotel room
+ */
+export async function deleteHotelRoom(hotelId: string, roomId: string): Promise<{ message: string }> {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin authentication required');
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_BASE_URL}/hotels/${hotelId}/rooms/${roomId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const errorMessage = error.detail || error.message || 'Failed to delete room';
+      throw new Error(errorMessage);
+    }
+
+    return { message: 'Room deleted successfully' };
+  } catch (error) {
+    console.error('Delete hotel room error:', error);
+    throw error;
+  }
+}

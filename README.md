@@ -102,11 +102,15 @@ kayak-simulation/
 ├── tests/
 │   ├── unit/                   # Unit tests
 │   ├── integration/            # Integration tests
-│   └── performance/            # Load tests (Locust)
-├── docs/
-│   └── api/                    # API documentation
+│   ├── performance/            # Load tests (Locust)
+│   ├── module8/                # Email notification tests
+│   ├── module10/                # AI Concierge tests
+│   ├── module11/                # Kafka event-driven tests
+│   └── module12/                # MongoDB analytics tests
 ├── scripts/
-│   └── init_databases.py       # Database initialization
+│   ├── database/               # Database initialization and seeding
+│   ├── kafka/                  # Kafka topic management
+│   └── verification/          # System verification scripts
 ├── docker-compose.yml          # Multi-container orchestration
 └── requirements.txt            # Python dependencies
 ```
@@ -237,9 +241,10 @@ cd tests/performance
 locust -f load_test.py --host=http://localhost:8001
 ```
 
-##  Documentation
+##  Additional Resources
 
-- API Documentation: `docs/api/README.md`
+- Module testing guides: See `tests/README.md` for test scripts
+- Implementation guides: See project structure for module-specific guides
 - OpenAPI Specs: Available at `/docs` on each service
 
 ##  Technology Stack

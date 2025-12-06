@@ -1,0 +1,151 @@
+MySQL Commands for Checking Payment Card Storage
+==================================================
+
+STEP 1: Connect to MySQL Container
+-----------------------------------
+docker-compose exec mysql mysql -u kayak_user -pkayak_pass kayak_db
+
+
+STEP 2: View All Tables (Optional - to confirm you're in the right database)
+-----------------------------------------------------------------------------
+SHOW TABLES;
+
+
+STEP 3: View the Structure of the Billings Table
+-------------------------------------------------
+DESCRIBE billings;
+
+OR
+
+SHOW COLUMNS FROM billings;
+
+
+STEP 4: View All Payment Records with Card Details
+---------------------------------------------------
+SELECT 
+    billing_id,
+    booking_id,
+    payment_method,
+    card_last_four,
+    payment_status,
+    total_amount,
+    created_at
+FROM billings
+ORDER BY created_at DESC;
+
+
+STEP 5: View Only Records with Card Information
+------------------------------------------------
+SELECT 
+    billing_id,
+    booking_id,
+    payment_method,
+    card_last_four,
+    payment_status,
+    total_amount,
+    transaction_date
+FROM billings
+WHERE card_last_four IS NOT NULL
+ORDER BY created_at DESC;
+
+
+STEP 6: View the Most Recent Payment
+-------------------------------------
+SELECT 
+    billing_id,
+    booking_id,
+    payment_method,
+    card_last_four,
+    LENGTH(card_last_four) as digit_count,
+    payment_status,
+    total_amount,
+    created_at
+FROM billings
+ORDER BY created_at DESC
+LIMIT 1;
+
+
+STEP 7: Verify Only Last 4 Digits Are Stored (Security Check)
+----------------------------------------------------------------
+SELECT 
+    billing_id,
+    card_last_four,
+    LENGTH(card_last_four) as digit_count
+FROM billings
+WHERE card_last_four IS NOT NULL;
+
+
+STEP 8: Check for Any Violations (More than 4 digits)
+------------------------------------------------------
+SELECT 
+    billing_id,
+    card_last_four,
+    LENGTH(card_last_four) as digit_count
+FROM billings
+WHERE card_last_four IS NOT NULL
+  AND LENGTH(card_last_four) > 4;
+
+Expected Result: 0 rows (no violations should be found)
+
+
+STEP 9: Exit MySQL
+-------------------
+EXIT;
+
+OR press Ctrl+D
+
+
+==================================================
+QUICK ONE-LINE COMMANDS (Alternative)
+==================================================
+
+View all billings with card info:
+docker-compose exec mysql mysql -u kayak_user -pkayak_pass kayak_db -e "SELECT billing_id, booking_id, payment_method, card_last_four, payment_status, total_amount FROM billings WHERE card_last_four IS NOT NULL ORDER BY created_at DESC;"
+
+View most recent payment:
+docker-compose exec mysql mysql -u kayak_user -pkayak_pass kayak_db -e "SELECT billing_id, payment_method, card_last_four, payment_status FROM billings ORDER BY created_at DESC LIMIT 1;"
+
+View table structure:
+docker-compose exec mysql mysql -u kayak_user -pkayak_pass kayak_db -e "DESCRIBE billings;"
+
+
+==================================================
+EXPECTED RESULTS
+==================================================
+
+When you run Step 4 or Step 5, you should see:
+- card_last_four: exactly 4 digits (e.g., "1111", "4444")
+- payment_method: "credit_card" or "debit_card"
+- No full card numbers stored anywhere
+
+Example output:
++------------+------------+----------------+----------------+----------------+-------------+---------------------+
+| billing_id | booking_id | payment_method | card_last_four | payment_status | total_amount| created_at          |
++------------+------------+----------------+----------------+----------------+-------------+---------------------+
+| BILL-ABC123| BK-001     | credit_card    | 1111           | completed      | 325.50     | 2025-12-01 10:30:00 |
++------------+------------+----------------+----------------+----------------+-------------+---------------------+
+
+
+==================================================
+ADDITIONAL USEFUL QUERIES
+==================================================
+
+Count total billing records:
+SELECT COUNT(*) as total_billings FROM billings;
+
+Count billing records with card info:
+SELECT COUNT(*) as billings_with_card FROM billings WHERE card_last_four IS NOT NULL;
+
+View all payment methods used:
+SELECT payment_method, COUNT(*) as count 
+FROM billings 
+GROUP BY payment_method;
+
+View billing summary:
+SELECT 
+    COUNT(*) as total_billings,
+    COUNT(card_last_four) as billings_with_card_info,
+    SUM(CASE WHEN LENGTH(card_last_four) = 4 THEN 1 ELSE 0 END) as correct_format,
+    SUM(CASE WHEN LENGTH(card_last_four) > 4 THEN 1 ELSE 0 END) as violations
+FROM billings;
+

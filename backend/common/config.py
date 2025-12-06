@@ -52,9 +52,9 @@ class Settings(BaseSettings):
     
     # Service URLs
     USER_SERVICE_URL: str = "http://localhost:8001"
-    FLIGHT_SERVICE_URL: str = "http://localhost:8002"
-    HOTEL_SERVICE_URL: str = "http://localhost:8003"
-    CAR_SERVICE_URL: str = "http://localhost:8004"
+    FLIGHT_SERVICE_URL: str = "http://flight-service:8000"
+    HOTEL_SERVICE_URL: str = "http://hotel-service:8000"
+    CAR_SERVICE_URL: str = "http://car-service:8000"
     BILLING_SERVICE_URL: str = "http://localhost:8005"
     ADMIN_SERVICE_URL: str = "http://localhost:8006"
     SEARCH_SERVICE_URL: str = "http://localhost:8007"

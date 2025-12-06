@@ -123,6 +123,11 @@ class RefundRequest(BaseModel):
     refund_amount: Optional[Decimal] = Field(None, description="Partial refund amount")
 
 
+class RefundApprovalRequest(BaseModel):
+    """Schema for refund approval/rejection request."""
+    reason: Optional[str] = Field(None, max_length=500, description="Reason for approval/rejection")
+
+
 class RefundResponse(BaseModel):
     """Schema for refund response."""
     refund_id: str

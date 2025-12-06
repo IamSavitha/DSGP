@@ -11,7 +11,6 @@ from .api.routes import router as api_router
 from .api.websocket import ConnectionManager
 from .agents.deals_agent import DealsAgent
 from .agents.concierge_agent import ConciergeAgent
-from .services.deal_detector import DealDetectorService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
