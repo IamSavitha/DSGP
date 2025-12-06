@@ -58,7 +58,14 @@ class ConciergeAgent:
             }
         
         # Generate response based on intent
-        if intent == "search":
+        if intent == "flight_query":
+            flight_response = await self._handle_flight_query(message, context)
+            return {
+                "message": flight_response,
+                "context": context
+            }
+        
+        elif intent == "search":
             bundles = await self._find_bundles(context)
             return {
                 "message": self._format_bundle_response(bundles, context),
@@ -105,6 +112,30 @@ class ConciergeAgent:
     def _parse_intent(self, message: str) -> str:
         """Parse user intent from message."""
         message_lower = message.lower()
+        message_upper = message.upper()
+        
+        # Common airport codes
+        airport_codes = ["SFO", "NYC", "JFK", "LAX", "MIA", "ORD", "BOS", "SEA", "DEN", "ATL", "PHX", "LAS", "DFW", "LGA", "EWR", "IAH", "CLT"]
+        has_airport_code = any(re.search(r'\b' + re.escape(code) + r'\b', message_upper) for code in airport_codes)
+        
+        # Check for route patterns (X to Y, from X to Y, X-Y)
+        has_route_pattern = bool(re.search(r'[A-Z]{3}\s+(?:to|from)\s+[A-Z]{3}', message_upper) or 
+                                 re.search(r'from\s+[A-Z]{3}\s+to\s+[A-Z]{3}', message_upper) or
+                                 re.search(r'[A-Z]{3}-[A-Z]{3}', message_upper))
+        
+        # Check for flight-specific queries (highest priority)
+        if any(word in message_lower for word in ["flight", "flights", "fly"]):
+            return "flight_query"
+        
+        if any(phrase in message_lower for phrase in ["how many", "count", "number of", "total"]):
+            if has_airport_code or has_route_pattern:
+                return "flight_query"
+        
+        if has_route_pattern:
+            return "flight_query"
+        
+        if has_airport_code and any(word in message_lower for word in ["to", "from", "on", "dec", "december", "jan", "january"]):
+            return "flight_query"
         
         if any(word in message_lower for word in ["track", "watch", "alert", "notify"]):
             return "watch"
@@ -118,7 +149,7 @@ class ConciergeAgent:
         if any(word in message_lower for word in ["make it", "change", "instead", "but", "without"]):
             return "refine"
         
-        if any(word in message_lower for word in ["find", "search", "book", "trip", "travel", "fly", "stay"]):
+        if any(word in message_lower for word in ["find", "search", "book", "trip", "travel", "stay", "looking for"]):
             return "search"
         
         return "general"
@@ -127,36 +158,107 @@ class ConciergeAgent:
         """Extract travel constraints from message."""
         constraints = {}
         message_lower = message.lower()
+        message_upper = message.upper()
+        
+        # Airport code to city mapping
+        airport_to_city = {
+            "SFO": "San Francisco", "NYC": "New York", "JFK": "New York", "LGA": "New York", "EWR": "New York",
+            "LAX": "Los Angeles", "MIA": "Miami", "ORD": "Chicago", "BOS": "Boston",
+            "SEA": "Seattle", "DEN": "Denver", "ATL": "Atlanta", "PHX": "Phoenix",
+            "LAS": "Las Vegas", "DFW": "Dallas", "IAH": "Houston", "CLT": "Charlotte"
+        }
+        
+        # Common airport codes (3 letters)
+        airport_codes = ["SFO", "NYC", "JFK", "LAX", "MIA", "ORD", "BOS", "SEA", "DEN", "ATL", "PHX", "LAS", "DFW", "IAH", "CLT", "LGA", "EWR"]
+        
+        # Extract airport codes from message
+        found_airports = []
+        for code in airport_codes:
+            if code in message_upper:
+                # Make sure it's a standalone code (not part of another word)
+                pattern = r'\b' + re.escape(code) + r'\b'
+                if re.search(pattern, message_upper):
+                    found_airports.append(code)
+                    # Map to city name
+                    if code in airport_to_city:
+                        city = airport_to_city[code]
+                        if code in ["JFK", "LGA", "EWR"]:
+                            city = "New York"  # All NYC airports map to New York
+        
+        # Extract route pattern: "X to Y" or "from X to Y" or "X-Y"
+        route_patterns = [
+            r'from\s+([A-Z]{3})\s+to\s+([A-Z]{3})',
+            r'([A-Z]{3})\s+to\s+([A-Z]{3})',
+            r'([A-Z]{3})-([A-Z]{3})',
+        ]
+        
+        for pattern in route_patterns:
+            match = re.search(pattern, message_upper)
+            if match:
+                departure = match.group(1)
+                arrival = match.group(2)
+                constraints["departure_airport"] = departure
+                constraints["arrival_airport"] = arrival
+                if departure in airport_to_city:
+                    constraints["origin"] = airport_to_city[departure]
+                if arrival in airport_to_city:
+                    constraints["destination"] = airport_to_city[arrival]
+                break
+        
+        # If no route pattern found, try to extract airports individually
+        if not constraints.get("departure_airport") and len(found_airports) >= 2:
+            constraints["departure_airport"] = found_airports[0]
+            constraints["arrival_airport"] = found_airports[1]
+            if found_airports[0] in airport_to_city:
+                constraints["origin"] = airport_to_city[found_airports[0]]
+            if found_airports[1] in airport_to_city:
+                constraints["destination"] = airport_to_city[found_airports[1]]
+        elif len(found_airports) == 1:
+            # Single airport - could be origin or destination
+            if "from" in message_lower:
+                constraints["departure_airport"] = found_airports[0]
+                if found_airports[0] in airport_to_city:
+                    constraints["origin"] = airport_to_city[found_airports[0]]
+            else:
+                constraints["arrival_airport"] = found_airports[0]
+                if found_airports[0] in airport_to_city:
+                    constraints["destination"] = airport_to_city[found_airports[0]]
         
         # Budget extraction
         budget_match = re.search(r'\$?(\d{1,5}(?:,\d{3})?(?:\.\d{2})?)', message)
         if budget_match:
             constraints["budget"] = float(budget_match.group(1).replace(',', ''))
         
-        # Date extraction (simplified)
+        # Enhanced date extraction
         date_patterns = [
-            r'(\w+ \d{1,2}(?:-\d{1,2})?)',
+            r'(dec\s+\d{1,2})', r'(december\s+\d{1,2})',
+            r'(jan\s+\d{1,2})', r'(january\s+\d{1,2})',
+            r'(feb\s+\d{1,2})', r'(february\s+\d{1,2})',
             r'(\d{1,2}/\d{1,2})',
+            r'(\d{4}-\d{2}-\d{2})',
         ]
         for pattern in date_patterns:
-            match = re.search(pattern, message)
+            match = re.search(pattern, message_lower if "dec" in pattern or "jan" in pattern or "feb" in pattern else message)
             if match:
                 constraints["dates"] = match.group(1)
                 break
         
-        # Destination extraction
+        # Destination extraction (city names)
         cities = ["tokyo", "miami", "new york", "san francisco", "los angeles", 
-                  "chicago", "seattle", "boston", "denver", "austin"]
+                  "chicago", "seattle", "boston", "denver", "austin", "atlanta",
+                  "phoenix", "las vegas", "dallas", "houston"]
         for city in cities:
             if city in message_lower:
-                constraints["destination"] = city.title()
+                if not constraints.get("destination"):
+                    constraints["destination"] = city.title()
                 break
         
         # Origin extraction
         if "from" in message_lower:
             for city in cities:
                 if f"from {city}" in message_lower:
-                    constraints["origin"] = city.title()
+                    if not constraints.get("origin"):
+                        constraints["origin"] = city.title()
                     break
         
         # Preferences
@@ -181,19 +283,35 @@ class ConciergeAgent:
     
     def _needs_clarification(self, intent: str, context: Dict) -> bool:
         """Check if we need to ask for clarification."""
+        if intent == "flight_query":
+            # For flight queries, need at least one airport
+            if not context.get("departure_airport") and not context.get("arrival_airport"):
+                return True
+            return False
+        
         if intent in ["search", "refine"]:
-            # Need at least destination or origin
-            if not context.get("destination") and not context.get("origin"):
+            # Need at least destination, origin, or airport codes
+            if (not context.get("destination") and not context.get("origin") and 
+                not context.get("departure_airport") and not context.get("arrival_airport")):
                 return True
         return False
     
     def _generate_clarification(self, intent: str, context: Dict) -> str:
         """Generate a clarification question."""
-        if not context.get("destination"):
-            return "Where would you like to go? I can find great deals to popular destinations!"
+        if intent == "flight_query":
+            if not context.get("departure_airport") and not context.get("arrival_airport"):
+                return "I can help you find flights! Please tell me your route, for example: 'flights from SFO to NYC' or 'how many flights from LAX to MIA'."
+            if not context.get("departure_airport"):
+                return f"I see you want to go to {context.get('arrival_airport', 'your destination')}. Where are you departing from?"
+            if not context.get("arrival_airport"):
+                return f"I see you're departing from {context.get('departure_airport')}. Where would you like to go?"
+        
+        if not context.get("destination") and not context.get("arrival_airport"):
+            return "Where would you like to go? I can find great deals to popular destinations! You can use airport codes like SFO, NYC, LAX, or city names."
         
         if not context.get("dates"):
-            return f"When are you thinking of traveling to {context.get('destination')}?"
+            dest = context.get("destination") or context.get("arrival_airport") or "your destination"
+            return f"When are you thinking of traveling to {dest}?"
         
         if not context.get("budget"):
             return "What's your budget for this trip? This helps me find the best options for you."
@@ -363,4 +481,68 @@ class ConciergeAgent:
         if watch_id in self.watches:
             self.watches[watch_id]["active"] = False
             logger.info(f"Removed watch {watch_id}")
+    
+    async def _handle_flight_query(self, message: str, context: Dict) -> str:
+        """Handle flight-specific queries like 'how many flights from X to Y'."""
+        import sys
+        import os
+        
+        # Import backend modules for database access
+        backend_path = os.path.join(os.path.dirname(__file__), '../../backend')
+        if os.path.exists(backend_path):
+            sys.path.insert(0, os.path.abspath(backend_path))
+        
+        try:
+            from backend.common.database import get_mysql_context
+            from backend.models.mysql_models import Flight
+            
+            departure_airport = context.get("departure_airport")
+            arrival_airport = context.get("arrival_airport")
+            
+            message_lower = message.lower()
+            is_count_query = any(word in message_lower for word in ["how many", "count", "number of", "total"])
+            
+            if not departure_airport and not arrival_airport:
+                return "I can help you find flights! Please tell me your departure and arrival airports, for example: 'flights from SFO to NYC' or 'how many flights from LAX to MIA'."
+            
+            with get_mysql_context() as db:
+                query = db.query(Flight).filter(Flight.is_active == True)
+                
+                if departure_airport:
+                    query = query.filter(Flight.departure_airport == departure_airport.upper())
+                
+                if arrival_airport:
+                    query = query.filter(Flight.arrival_airport == arrival_airport.upper())
+                
+                flights = query.all()
+                
+                if is_count_query:
+                    count = len(flights)
+                    route = f"{departure_airport or 'anywhere'} to {arrival_airport or 'anywhere'}"
+                    return f"I found {count} active flight(s) from {route}. Would you like me to show you the details?"
+                else:
+                    if not flights:
+                        route = f"{departure_airport or 'anywhere'} to {arrival_airport or 'anywhere'}"
+                        return f"I couldn't find any flights from {route}. Would you like to search for a different route?"
+                    
+                    # Format flight information
+                    response = f"I found {len(flights)} flight(s):\n\n"
+                    for i, flight in enumerate(flights[:5], 1):  # Show up to 5 flights
+                        price = float(flight.base_price) if flight.base_price else 0
+                        response += f"{i}. {flight.airline_name} - {flight.departure_airport} to {flight.arrival_airport}\n"
+                        response += f"   Price: ${price:.2f} | Seats: {flight.available_seats}/{flight.total_seats}\n"
+                        if flight.departure_datetime:
+                            dep_time = flight.departure_datetime.strftime("%Y-%m-%d %H:%M")
+                            response += f"   Departure: {dep_time}\n"
+                        response += "\n"
+                    
+                    if len(flights) > 5:
+                        response += f"... and {len(flights) - 5} more flight(s). "
+                    response += "Would you like to see more details or book one of these?"
+                    
+                    return response
+                    
+        except Exception as e:
+            logger.error(f"Error querying flights: {e}")
+            return "I'm having trouble accessing the flight database right now. Please try again in a moment, or try a different query."
 
