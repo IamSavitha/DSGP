@@ -67,3 +67,7 @@ dist/
 build/
 *.egg-info/
 
+# Frontend build
+.vite/
+.vite-ssg/
+
