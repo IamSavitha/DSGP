@@ -26,10 +26,20 @@ yarn-error.log*
 *~
 .DS_Store
 
-# Environment
+# Environment & Secrets
 .env
 .env.local
 .env.*.local
+*.env
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*password*
+*secret*
+*credentials*
+config/secrets.*
 
 # Documentation (excluded from git)
 docs/
