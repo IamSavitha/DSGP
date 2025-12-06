@@ -42,14 +42,24 @@ export interface TokenResponse {
 /**
  * Register a new user
  */
-export async function signup(data: SignupData): Promise<any> {
+export async function signup(data: SignupData, imageFile?: File): Promise<any> {
   try {
+    const formData = new FormData();
+    formData.append('user_id', data.user_id);
+    formData.append('first_name', data.first_name);
+    formData.append('last_name', data.last_name);
+    formData.append('email', data.email);
+    formData.append('password', data.password);
+    if (data.phone_number) formData.append('phone_number', data.phone_number);
+    if (data.address) formData.append('address', data.address);
+    if (data.city) formData.append('city', data.city);
+    if (data.state) formData.append('state', data.state);
+    if (data.zip_code) formData.append('zip_code', data.zip_code);
+    if (imageFile) formData.append('profile_image', imageFile);
+
     const response = await fetch(`${API_BASE_URL}/users`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
+      body: formData,
     });
 
     if (!response.ok) {
@@ -174,16 +184,27 @@ export async function getUserProfile(userId: string, token: string): Promise<Use
 export async function updateUserProfile(
   userId: string,
   data: UpdateProfileData,
-  token: string
+  token: string,
+  imageFile?: File
 ): Promise<UserProfile> {
   try {
+    const formData = new FormData();
+    if (data.first_name) formData.append('first_name', data.first_name);
+    if (data.last_name) formData.append('last_name', data.last_name);
+    if (data.email) formData.append('email', data.email);
+    if (data.phone_number) formData.append('phone_number', data.phone_number);
+    if (data.address) formData.append('address', data.address);
+    if (data.city) formData.append('city', data.city);
+    if (data.state) formData.append('state', data.state);
+    if (data.zip_code) formData.append('zip_code', data.zip_code);
+    if (imageFile) formData.append('profile_image', imageFile);
+
     const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify(data),
+      body: formData,
     });
 
     if (!response.ok) {

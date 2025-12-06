@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Save, Loader2, CreditCard } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Save, Loader2, CreditCard, Image as ImageIcon, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getUserProfile, updateUserProfile, UserProfile, UpdateProfileData } from '../api/auth';
 
@@ -22,6 +22,8 @@ const ProfilePage: React.FC = () => {
     state: '',
     zip_code: '',
   });
+  const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -44,6 +46,10 @@ const ProfilePage: React.FC = () => {
           state: userProfile.state || '',
           zip_code: userProfile.zip_code || '',
         });
+        // Set image preview if profile has image
+        if (userProfile.profile_image_url) {
+          setImagePreview(userProfile.profile_image_url);
+        }
       } catch (err: any) {
         setError(err.message || 'Failed to load profile');
       } finally {
@@ -59,6 +65,40 @@ const ProfilePage: React.FC = () => {
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select a valid image file');
+        return;
+      }
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size must be less than 5MB');
+        return;
+      }
+      setProfileImage(file);
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+      setError('');
+    }
+  };
+
+  const removeImage = () => {
+    setProfileImage(null);
+    // Keep existing image preview if available
+    if (profile?.profile_image_url) {
+      setImagePreview(profile.profile_image_url);
+    } else {
+      setImagePreview(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,7 +124,7 @@ const ProfilePage: React.FC = () => {
         zip_code: formData.zip_code || undefined,
       };
 
-      const updatedProfile = await updateUserProfile(user.user_id, updateData, token);
+      const updatedProfile = await updateUserProfile(user.user_id, updateData, token, profileImage || undefined);
       setProfile(updatedProfile);
       
       // Update AuthContext with new user data
@@ -101,6 +141,12 @@ const ProfilePage: React.FC = () => {
 
       setSuccess('Profile updated successfully!');
       setIsEditing(false);
+      // Reset image file after successful update
+      setProfileImage(null);
+      // Update image preview with new URL if available
+      if (updatedProfile.profile_image_url) {
+        setImagePreview(updatedProfile.profile_image_url);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to update profile');
     } finally {
@@ -161,6 +207,66 @@ const ProfilePage: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Profile Image Upload */}
+            {isEditing && (
+              <div>
+                <label htmlFor="profileImage" className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Profile Image
+                </label>
+                <div className="flex items-center space-x-4">
+                  {imagePreview ? (
+                    <div className="relative">
+                      <img
+                        src={imagePreview}
+                        alt="Profile preview"
+                        className="w-24 h-24 rounded-full object-cover border-2 border-slate-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={removeImage}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : profile?.profile_image_url ? (
+                    <img
+                      src={profile.profile_image_url}
+                      alt="Current profile"
+                      className="w-24 h-24 rounded-full object-cover border-2 border-slate-300"
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center">
+                      <ImageIcon className="h-10 w-10 text-slate-400" />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <input
+                      id="profileImage"
+                      name="profileImage"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">JPG, PNG, GIF or WEBP (max 5MB)</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!isEditing && profile?.profile_image_url && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Profile Image
+                </label>
+                <img
+                  src={profile.profile_image_url}
+                  alt="Profile"
+                  className="w-24 h-24 rounded-full object-cover border-2 border-slate-300"
+                />
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* User ID (Read-only) */}
               <div>
@@ -353,6 +459,7 @@ const ProfilePage: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setIsEditing(false);
+                    setProfileImage(null);
                     // Reset form data to original profile
                     if (profile) {
                       setFormData({
@@ -365,6 +472,12 @@ const ProfilePage: React.FC = () => {
                         state: profile.state || '',
                         zip_code: profile.zip_code || '',
                       });
+                      // Reset image preview to original
+                      if (profile.profile_image_url) {
+                        setImagePreview(profile.profile_image_url);
+                      } else {
+                        setImagePreview(null);
+                      }
                     }
                     setError('');
                     setSuccess('');

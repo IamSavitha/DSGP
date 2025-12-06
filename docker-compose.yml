@@ -541,14 +541,8 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      VITE_API_BASE_URL: http://user-service:8000
-      VITE_FLIGHT_API_URL: http://flight-service:8000
-      VITE_HOTEL_API_URL: http://hotel-service:8000
-      VITE_CAR_API_URL: http://car-service:8000
-      VITE_ADMIN_API_URL: http://admin-service:8000
-      VITE_SEARCH_API_URL: http://search-service:8000
-      VITE_BOOKING_API_URL: http://booking-service:8000
+    # Environment variables removed - using Vite proxy paths (/api/flights, /api/hotels, etc.)
+    # instead of direct Docker service URLs
     networks:
       - kayak_network
 

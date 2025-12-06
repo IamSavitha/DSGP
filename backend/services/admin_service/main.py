@@ -1,9 +1,10 @@
 """
 Admin Service - FastAPI application for admin management and analytics.
 """
-from fastapi import FastAPI, Depends, Query, status, HTTPException
+from fastapi import FastAPI, Depends, Query, status, HTTPException, UploadFile, File, Form
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
@@ -11,6 +12,7 @@ import logging
 
 from ...common.database import get_mysql_session, init_mysql_db
 from ...common.exceptions import handle_not_found
+from ...common.image_upload import save_profile_image
 from .auth import get_current_admin
 from ...models.mysql_models import Admin
 from ...schemas.admin_schemas import AdminLogin
@@ -30,6 +32,11 @@ app.add_middleware(
 async def startup_event():
     logger.info("Starting Admin Service...")
     init_mysql_db()
+    # Mount static files for serving uploaded images
+    try:
+        app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
+    except Exception as e:
+        logger.warning(f"Could not mount static files: {e}")
 
 
 @app.get("/health")
@@ -742,15 +749,46 @@ async def delete_flight(
 
 @app.post("/auth/signup")
 async def admin_signup(
-    admin_data: dict,
+    admin_id: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    phone_number: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    zip_code: Optional[str] = Form(None),
+    role: str = Form("admin"),
+    profile_image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_mysql_session)
 ):
-    """Create a new admin account."""
+    """Create a new admin account with optional profile image."""
     from .service import AdminService
     from ...schemas.admin_schemas import AdminCreate
     
     try:
-        admin_create = AdminCreate(**admin_data)
+        # Handle image upload if provided
+        profile_image_url = None
+        if profile_image:
+            profile_image_url = await save_profile_image(profile_image, user_type="admin")
+        
+        # Create admin data object
+        admin_create = AdminCreate(
+            admin_id=admin_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password=password,
+            phone_number=phone_number,
+            address=address,
+            city=city,
+            state=state,
+            zip_code=zip_code,
+            role=role,
+            profile_image_url=profile_image_url
+        )
+        
         service = AdminService(db)
         admin = service.create_admin(admin_create)
         

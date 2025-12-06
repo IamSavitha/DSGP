@@ -43,14 +43,25 @@ export interface AdminTokenResponse {
 /**
  * Register a new admin
  */
-export async function adminSignup(data: AdminSignupData): Promise<any> {
+export async function adminSignup(data: AdminSignupData, imageFile?: File): Promise<any> {
   try {
+    const formData = new FormData();
+    formData.append('admin_id', data.admin_id);
+    formData.append('first_name', data.first_name);
+    formData.append('last_name', data.last_name);
+    formData.append('email', data.email);
+    formData.append('password', data.password);
+    if (data.phone_number) formData.append('phone_number', data.phone_number);
+    if (data.address) formData.append('address', data.address);
+    if (data.city) formData.append('city', data.city);
+    if (data.state) formData.append('state', data.state);
+    if (data.zip_code) formData.append('zip_code', data.zip_code);
+    if (data.role) formData.append('role', data.role);
+    if (imageFile) formData.append('profile_image', imageFile);
+
     const response = await fetch(`${ADMIN_API_BASE_URL}/auth/signup`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
+      body: formData,
     });
 
     if (!response.ok) {

@@ -1,11 +1,13 @@
 """
 User Service - FastAPI application for user management.
 """
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
+import json
 
 from ...common.config import settings
 from ...common.database import get_mysql_session, init_mysql_db
@@ -18,6 +20,7 @@ from fastapi.responses import JSONResponse
 from ...schemas.user_schemas import (
     UserCreate, UserUpdate, UserResponse, UserLogin, TokenResponse
 )
+from ...common.image_upload import save_profile_image
 from .service import UserService
 from .auth import create_access_token, get_current_user
 
@@ -78,6 +81,11 @@ async def startup_event():
     """Initialize database on startup."""
     logger.info("Starting User Service...")
     init_mysql_db()
+    # Mount static files for serving uploaded images
+    try:
+        app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
+    except Exception as e:
+        logger.warning(f"Could not mount static files: {e}")
     logger.info("User Service started successfully")
 
 
@@ -104,18 +112,48 @@ async def health_check():
 
 @app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
-    user_data: UserCreate,
+    user_id: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    phone_number: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    zip_code: Optional[str] = Form(None),
+    profile_image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_mysql_session)
 ):
-    """Create a new user."""
+    """Create a new user with optional profile image."""
     try:
+        # Handle image upload if provided
+        profile_image_url = None
+        if profile_image:
+            profile_image_url = await save_profile_image(profile_image, user_type="user")
+        
+        # Create user data object
+        user_data = UserCreate(
+            user_id=user_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password=password,
+            phone_number=phone_number,
+            address=address,
+            city=city,
+            state=state,
+            zip_code=zip_code,
+            profile_image_url=profile_image_url
+        )
+        
         service = UserService(db)
         user = service.create_user(user_data)
         return user
     except DuplicateUserException:
-        handle_duplicate_user(user_data.user_id)
+        handle_duplicate_user(user_id)
     except InvalidUserIdException:
-        handle_invalid_user_id(user_data.user_id)
+        handle_invalid_user_id(user_id)
 
 
 @app.get("/users/{user_id}", response_model=UserResponse)
@@ -134,11 +172,38 @@ async def get_user(
 @app.put("/users/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: str,
-    user_data: UserUpdate,
+    first_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    phone_number: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    zip_code: Optional[str] = Form(None),
+    profile_image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_mysql_session)
 ):
-    """Update user information."""
+    """Update user information with optional profile image."""
     service = UserService(db)
+    
+    # Handle image upload if provided
+    profile_image_url = None
+    if profile_image:
+        profile_image_url = await save_profile_image(profile_image, user_type="user")
+    
+    # Create update data object
+    user_data = UserUpdate(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone_number=phone_number,
+        address=address,
+        city=city,
+        state=state,
+        zip_code=zip_code,
+        profile_image_url=profile_image_url
+    )
+    
     user = service.update_user(user_id, user_data)
     if not user:
         handle_not_found("User", user_id)
